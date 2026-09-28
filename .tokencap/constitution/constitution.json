@@ -1,0 +1,172 @@
+{
+  "version": "1.2",
+  "generatedAt": "2026-09-28T13:18:02.172Z",
+  "rules": [
+    {
+      "id": "CONST-ARCH-001",
+      "category": "Architecture",
+      "severity": "HIGH",
+      "confidence": 0.72,
+      "source": "heuristic",
+      "description": "Services cannot import UI components.",
+      "reason": "Importing UI components into services couples server-side logic to browser rendering. This breaks SSR, testability, and separation of concerns.",
+      "whatBreaks": "Server-side services gain browser-only dependencies. Unit tests for services fail. SSR breaks.",
+      "examples": [
+        "Respect the layer boundary described."
+      ],
+      "derivedFrom": [],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-ARCH-002",
+      "category": "Architecture",
+      "severity": "HIGH",
+      "confidence": 0.72,
+      "source": "heuristic",
+      "description": "Controllers cannot access the database directly.",
+      "reason": "Direct DB access in controllers bypasses the service layer. This breaks the layered architecture and makes logic untestable.",
+      "whatBreaks": "Business logic leaks into controllers. Database coupling makes refactoring expensive.",
+      "examples": [
+        "Respect the layer boundary described."
+      ],
+      "derivedFrom": [],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-ARCH-003",
+      "category": "Architecture",
+      "severity": "HIGH",
+      "confidence": 0.72,
+      "source": "heuristic",
+      "description": "Route handlers cannot access the database directly.",
+      "reason": "Routes should delegate to services/controllers, not query the database themselves.",
+      "whatBreaks": "Business logic scattered across route files. Impossible to test in isolation.",
+      "examples": [
+        "Respect the layer boundary described."
+      ],
+      "derivedFrom": [],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-ARCH-004",
+      "category": "Architecture",
+      "severity": "HIGH",
+      "confidence": 0.72,
+      "source": "heuristic",
+      "description": "UI components cannot import server-only modules.",
+      "reason": "Server-only modules may contain secrets or Node.js-only APIs that crash in the browser.",
+      "whatBreaks": "Build errors in browser environments. Potential secret exposure.",
+      "examples": [
+        "Respect the layer boundary described."
+      ],
+      "derivedFrom": [],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-ARCH-005",
+      "category": "Architecture",
+      "severity": "HIGH",
+      "confidence": 0.8,
+      "source": "heuristic",
+      "description": "High-impact clusters (Other, Database, Config) must not gain new circular dependencies.",
+      "reason": "High-impact clusters already coordinate many modules. Adding circular imports makes builds fragile.",
+      "whatBreaks": "Module resolution fails. Build tools (webpack, esbuild) may hang or produce incorrect output.",
+      "examples": [
+        "Use dependency injection or an event bus to break cycles."
+      ],
+      "derivedFrom": [],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-SEC-001",
+      "category": "Security",
+      "severity": "HIGH",
+      "confidence": 0.88,
+      "source": "heuristic",
+      "description": "Security middleware (helmet, CORS, CSRF) must remain enabled.",
+      "reason": "These middleware prevent common web security vulnerabilities (XSS, CSRF, clickjacking).",
+      "whatBreaks": "Applications become vulnerable to XSS, clickjacking, and CSRF attacks.",
+      "examples": [
+        "Found in: src/linkedin/auth.ts"
+      ],
+      "derivedFrom": [
+        "src/linkedin/auth.ts"
+      ],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-SEC-002",
+      "category": "Security",
+      "severity": "HIGH",
+      "confidence": 0.82,
+      "source": "heuristic",
+      "description": "Rate limiting must not be removed from public endpoints.",
+      "reason": "Rate limiting prevents brute-force attacks and denial-of-service.",
+      "whatBreaks": "Brute-force login attacks. API abuse. Service degradation under load.",
+      "examples": [
+        "Found in: src/linkedin/comments.ts"
+      ],
+      "derivedFrom": [
+        "src/linkedin/comments.ts"
+      ],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-SEC-003",
+      "category": "Security",
+      "severity": "CRITICAL",
+      "confidence": 0.99,
+      "source": "heuristic",
+      "description": "Environment variable files (.env) must never be committed to version control.",
+      "reason": ".env files contain secrets. Committing them exposes credentials to all repository users.",
+      "whatBreaks": "All secrets in .env become public. Immediate security incident.",
+      "examples": [
+        "Ensure .env is in .gitignore.",
+        "Use a secrets manager for production."
+      ],
+      "derivedFrom": [
+        ".env",
+        ".env.example"
+      ],
+      "relationships": [],
+      "manual": false
+    },
+    {
+      "id": "CONST-FLOW-001",
+      "category": "CriticalFlow",
+      "severity": "CRITICAL",
+      "confidence": 0.95,
+      "source": "heuristic",
+      "description": "Authentication Flow is repository-critical and must remain intact end-to-end.",
+      "reason": "Every protected page and authenticated feature depends on this flow working correctly.",
+      "whatBreaks": "Users cannot log in. All authenticated features become unreachable. Sessions invalidated.",
+      "examples": [
+        "Do not remove login endpoint.",
+        "Do not change session token format without migration."
+      ],
+      "derivedFrom": [
+        "src/linkedin/auth.ts"
+      ],
+      "relationships": [
+        "dependsOn:CONST-SEC-003"
+      ],
+      "manual": false
+    }
+  ],
+  "score": {
+    "total": 91,
+    "architecture": 100,
+    "apiStability": 90,
+    "schemaIntegrity": 90,
+    "security": 85,
+    "compliance": 95
+  },
+  "filesWritten": []
+}

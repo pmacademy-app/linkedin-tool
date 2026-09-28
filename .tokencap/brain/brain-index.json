@@ -1,0 +1,35 @@
+{
+  "other": [
+    ".tokencap/constitution/api-contracts.yaml",
+    ".tokencap/constitution/constitution.yaml",
+    "src/ai/people.ts",
+    "src/ai/posts.ts",
+    "src/discovery/firecrawl.ts",
+    "src/discovery/people.ts",
+    "src/discovery/posts.ts",
+    "src/index.ts",
+    "src/linkedin/comments.ts",
+    "src/storage/history.ts",
+    "src/storage/models.ts",
+    "src/utils/browser.ts",
+    "src/utils/clipboard.ts"
+  ],
+  "database": [
+    ".tokencap/constitution/schema-invariants.yaml"
+  ],
+  "testing": [
+    "src/__tests__/index.test.ts"
+  ],
+  "services": [
+    "src/ai/client.ts"
+  ],
+  "config": [
+    "src/config.ts"
+  ],
+  "authentication": [
+    "src/linkedin/auth.ts"
+  ],
+  "frontend": [
+    "src/ui/review.ts"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "other": [
+    ".tokencap/constitution/**",
+    "src/ai/**",
+    "src/discovery/**",
+    "src/index*",
+    "src/linkedin/comments*",
+    "src/storage/**",
+    "src/utils/**"
+  ],
+  "database": [
+    ".tokencap/constitution/schema-invariants*"
+  ],
+  "testing": [
+    "src/__tests__/index.test*"
+  ],
+  "services": [
+    "src/ai/client*"
+  ],
+  "config": [
+    "src/config*"
+  ],
+  "authentication": [
+    "src/linkedin/auth*"
+  ],
+  "frontend": [
+    "src/ui/review*"
+  ]
+}

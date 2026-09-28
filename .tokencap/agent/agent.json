@@ -1,0 +1,87 @@
+{
+  "version": "0.8",
+  "projectName": "prodily-growth-assistant",
+  "generatedAt": "2026-09-28T13:18:01.929Z",
+  "projectType": "TypeScript",
+  "techStack": {
+    "languages": [
+      "TypeScript"
+    ],
+    "frameworks": [],
+    "databases": [],
+    "auth": [],
+    "testing": [],
+    "buildTools": [],
+    "cloudSdks": [],
+    "payments": [],
+    "externalServices": []
+  },
+  "architecture": {
+    "style": "Modular",
+    "layers": [
+      "Modular"
+    ],
+    "clusters": [
+      {
+        "name": "Unclassified",
+        "size": 13,
+        "risk": "LOW",
+        "centralFile": "api-contracts.yaml"
+      },
+      {
+        "name": "Database",
+        "size": 1,
+        "risk": "LOW",
+        "centralFile": "schema-invariants.yaml"
+      },
+      {
+        "name": "Testing",
+        "size": 1,
+        "risk": "LOW",
+        "centralFile": "index.test.ts"
+      },
+      {
+        "name": "Services",
+        "size": 1,
+        "risk": "LOW",
+        "centralFile": "client.ts"
+      },
+      {
+        "name": "Config",
+        "size": 1,
+        "risk": "LOW",
+        "centralFile": "config.ts"
+      },
+      {
+        "name": "Authentication",
+        "size": 1,
+        "risk": "LOW",
+        "centralFile": "auth.ts"
+      },
+      {
+        "name": "Frontend",
+        "size": 1,
+        "risk": "LOW",
+        "centralFile": "review.ts"
+      }
+    ],
+    "criticalChains": [],
+    "evidence": []
+  },
+  "criticalFiles": [
+    ".tokencap/constitution/api-contracts.yaml",
+    ".tokencap/constitution/constitution.yaml",
+    ".tokencap/constitution/schema-invariants.yaml",
+    "src/config.ts"
+  ],
+  "riskAreas": [],
+  "reviewGroups": [],
+  "rules": [
+    "Shared utilities live in utils/ - keep them pure and side-effect free",
+    "Jest tests live in __tests__/ directories",
+    "Use TypeScript strictly - avoid `any` types",
+    "Write tests for all service-layer functions"
+  ],
+  "coreFeatures": [],
+  "agentInjectHooks": {}
+}

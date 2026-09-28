@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+# Local state files -- contain secrets, never commit
+data/history.json
+data/linkedin-auth.json
+data/*credentials*
+data/*tokens*
+data/database/*.db*

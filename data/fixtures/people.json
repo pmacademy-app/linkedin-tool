@@ -1,0 +1,152 @@
+[
+  {
+    "profileUrl": "https://www.linkedin.com/in/priya-sharma-aspiring-pm",
+    "name": "Priya Sharma",
+    "headline": "Software Engineer at TCS | Aspiring Product Manager | Currently learning PM frameworks",
+    "snippets": [
+      "Software Engineer with 3 years experience, actively studying for PM interviews. Completed Google PM certificate. Looking to transition into product management.",
+      "Interested in product thinking, user research, and building roadmaps."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/rahul-verma-pm-aspirant",
+    "name": "Rahul Verma",
+    "headline": "MBA Student at IIM-B | Breaking into Product Management | PM enthusiast",
+    "snippets": [
+      "MBA student with background in engineering. Passionate about product management. Preparing for PM roles at tech startups and product companies.",
+      "Currently working on a PM portfolio project. Interested in edtech and consumer products."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/aisha-patel-career-transition",
+    "name": "Aisha Patel",
+    "headline": "UX Designer transitioning to Product Management | 2 years UX experience",
+    "snippets": [
+      "UI/UX Designer looking to leverage design skills in a Product Manager role. Taking online PM courses and reading product books.",
+      "Completed Reforge PM course. Building a portfolio of product case studies."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/karan-mehta-junior-pm",
+    "name": "Karan Mehta",
+    "headline": "Associate Product Manager | Former SDE | 1 year in PM",
+    "snippets": [
+      "Just made the switch from software engineering to product management. 1 year into my PM journey. Always looking to learn and grow.",
+      "Interested in B2B SaaS products. Open to mentorship and networking."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/sneha-joshi-business-analyst",
+    "name": "Sneha Joshi",
+    "headline": "Business Analyst | Aspiring Product Manager | Learning PM skills",
+    "snippets": [
+      "Business Analyst with 2 years experience wanting to move into Product Management. Actively studying product strategy, prioritisation frameworks, and user research.",
+      "Preparing PM interview cases. Interested in fintech products."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/dev-kumar-cs-student-pm",
+    "name": "Dev Kumar",
+    "headline": "CS Final Year Student | Aspiring PM | Building product intuition",
+    "snippets": [
+      "Computer Science student in final year. Aiming for APM programmes at top tech companies. Currently doing product teardowns and case study prep.",
+      "Member of product management club at college. Did an internship in operations at a startup."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/meera-nair-marketing-to-pm",
+    "name": "Meera Nair",
+    "headline": "Digital Marketing Manager | Transitioning to Product | Interested in Growth PM",
+    "snippets": [
+      "Marketing professional with 3 years of experience in digital growth. Pivoting to product management, specifically growth and user acquisition roles.",
+      "Learning about product analytics, A/B testing, and roadmap planning."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/arjun-reddy-data-to-pm",
+    "name": "Arjun Reddy",
+    "headline": "Data Analyst | Aspiring Product Manager | Data-informed product thinking",
+    "snippets": [
+      "Data analyst with strong SQL and Python skills, looking to move into product management. Believe data-driven decisions make better products.",
+      "Currently doing PM courses on Coursera. Working on a portfolio project for a productivity app concept."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/fatima-khan-pm-bootcamp",
+    "name": "Fatima Khan",
+    "headline": "Product Management Bootcamp Graduate | Seeking first PM role | Edtech enthusiast",
+    "snippets": [
+      "Recently completed a 12-week PM bootcamp. Looking for my first product management role. Particularly interested in edtech and social impact products.",
+      "Built mock PRDs and product roadmaps during bootcamp. Open to APM roles and PM internships."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/vikram-singh-consultant-pm",
+    "name": "Vikram Singh",
+    "headline": "Management Consultant at Deloitte | MBA | Targeting Product Manager roles",
+    "snippets": [
+      "Strategy consultant with MBA, pivoting to product management. Have worked on digital transformation projects and product strategy for clients.",
+      "Preparing for PM interviews at Series B/C startups and FAANG companies."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/ananya-roy-pm-learner",
+    "name": "Ananya Roy",
+    "headline": "Student | Learning Product Management | Building PM skills one day at a time",
+    "snippets": [
+      "Undergraduate student fascinated by how products are built. Started learning PM skills through YouTube, books, and online communities. Want to eventually work in product.",
+      "Doing mock interviews and building a small side project to understand product development."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/nikhil-gupta-ops-pm",
+    "name": "Nikhil Gupta",
+    "headline": "Operations Manager | Breaking into Product Management | Process improvement",
+    "snippets": [
+      "Operations professional who has always been interested in the product side. Now actively studying PM frameworks and building case studies to make the switch.",
+      "Love working at the intersection of process, technology, and user needs."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/zara-ahmed-product-enthusiast",
+    "name": "Zara Ahmed",
+    "headline": "Customer Success Manager | Aspiring PM | User empathy advocate",
+    "snippets": [
+      "CS manager with 2 years of direct user interaction. Transitioning to product to bring user voice earlier into the product lifecycle.",
+      "Completed a product management certification. Working on PRD writing skills."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/rohit-kapoor-senior-vp-product",
+    "name": "Rohit Kapoor",
+    "headline": "VP of Product at Flipkart | 12 years in Product | Ex-Google PM",
+    "snippets": [
+      "Senior product leader with over a decade of experience building consumer products at scale.",
+      "Mentoring the next generation of PMs."
+    ],
+    "source": "mock"
+  },
+  {
+    "profileUrl": "https://www.linkedin.com/in/deepa-sharma-pm-recruiter",
+    "name": "Deepa Sharma",
+    "headline": "PM Recruiter at XYZ Talent | Connecting PMs with top companies",
+    "snippets": [
+      "Recruiter specialising in product management roles. Helping companies find exceptional PM talent.",
+      "Regular tips on PM hiring and interview success."
+    ],
+    "source": "mock"
+  }
+]
