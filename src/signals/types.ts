@@ -59,6 +59,8 @@ export interface PostDeterministicEvidence {
   authorActivityStatus: EvidenceStatus;
   authorActivityEvidence: string;
   engagementEvidence: string;
+  creatorScale?: "peer_or_rising" | "mega_influencer" | "standard_creator";
+  creatorScaleEvidence?: string;
   alreadyCommented: boolean;
   isDuplicate: boolean;
 }

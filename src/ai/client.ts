@@ -78,6 +78,7 @@ function buildNvidiaClient(): AiClient {
   const openai = new OpenAI({
     apiKey,
     baseURL: baseUrl,
+    timeout: 45000,
   });
 
   async function executeChat(messages: OpenAI.ChatCompletionMessageParam[]): Promise<AiResponse> {
@@ -86,7 +87,6 @@ function buildNvidiaClient(): AiClient {
       messages,
       temperature: 0.3,
       max_tokens: 4096,
-      response_format: { type: "json_object" },
     };
 
     let res: OpenAI.ChatCompletion;
@@ -96,36 +96,18 @@ function buildNvidiaClient(): AiClient {
       const errorObj = err as Record<string, unknown>;
       const status = (errorObj?.status ?? errorObj?.statusCode) as number | undefined;
       const rawMsg = String(errorObj?.message ?? err);
-
-      // If the endpoint does not support response_format (HTTP 400), retry without it
-      if (status === 400 && rawMsg.includes("response_format")) {
-        delete params.response_format;
-        try {
-          res = await openai.chat.completions.create(params);
-        } catch (retryErr: unknown) {
-          const retryObj = retryErr as Record<string, unknown>;
-          const retryStatus = (retryObj?.status ?? retryObj?.statusCode) as number | undefined;
-          const cleanMsg = sanitizeErrorMessage(String(retryObj?.message ?? retryErr));
-          logAiDiagnostic({
-            model,
-            httpStatus: retryStatus,
-            errorMessage: cleanMsg,
-          });
-          throw new Error(`NVIDIA AI request failed${retryStatus ? ` (HTTP ${retryStatus})` : ""}: ${cleanMsg}`);
-        }
-      } else {
-        const cleanMsg = sanitizeErrorMessage(rawMsg);
-        logAiDiagnostic({
-          model,
-          httpStatus: status,
-          errorMessage: cleanMsg,
-        });
-        throw new Error(`NVIDIA AI request failed${status ? ` (HTTP ${status})` : ""}: ${cleanMsg}`);
-      }
+      const cleanMsg = sanitizeErrorMessage(rawMsg);
+      logAiDiagnostic({
+        model,
+        httpStatus: status,
+        errorMessage: cleanMsg,
+      });
+      throw new Error(`NVIDIA AI request failed${status ? ` (HTTP ${status})` : ""}: ${cleanMsg}`);
     }
 
-    const choice = res.choices[0];
-    const content = choice?.message?.content ?? "";
+    let choice = res.choices[0];
+    let content = choice?.message?.content ?? "";
+
     const finishReason = choice?.finish_reason;
     const responseModel = res.model || model;
 

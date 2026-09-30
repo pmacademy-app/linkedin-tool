@@ -17,6 +17,13 @@ import { GrowthRepository } from "../database/repository.js";
 import { getDatabase, closeDatabase } from "../database/connection.js";
 import { evaluatePeopleSignals } from "../signals/peopleSignals.js";
 import { evaluatePostSignals, extractAuthorProfileUrlFromPostUrl } from "../signals/postSignals.js";
+import {
+  cleanSuggestedComment,
+  containsFabricatedBackstory,
+  stripFabricatedBackstory,
+  containsUnnecessaryAcronym,
+} from "../ai/posts.js";
+import { determineOutreachAngle, cleanSuggestedDm } from "../ai/people.js";
 import type { RawPerson, RawPost } from "../storage/models.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -394,3 +401,181 @@ describe("Resumable Workflow State", () => {
     if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   });
 });
+
+// ============================================================================
+// 7. AI Quality Guardrails & Creator Scale
+// ============================================================================
+
+describe("AI Quality Guardrails & Creator Scale", () => {
+  it("prevents and cleans generic flattering comment openers", () => {
+    const examples = [
+      {
+        input: "Great post! The real trade-off in discovery is user desire vs feasibility.",
+        expected: "The real trade-off in discovery is user desire vs feasibility.",
+      },
+      {
+        input: "Your point about PRDs resonates with me. The best specs serve as living alignment docs rather than rigid handoffs.",
+        expected: "The best specs serve as living alignment docs rather than rigid handoffs.",
+      },
+      {
+        input: "Your call for continuous discovery is spot on! How do you protect engineering bandwidth during early sprints?",
+        expected: "How do you protect engineering bandwidth during early sprints?",
+      },
+      {
+        input: "I appreciate this emphasis on metrics. Leading indicators usually reveal churn risks weeks before lagging revenue numbers do.",
+        expected: "Leading indicators usually reveal churn risks weeks before lagging revenue numbers do.",
+      },
+      {
+        input: "Spot on! Prioritising by customer impact rather than stakeholder volume is the hardest habit to build.",
+        expected: "Prioritising by customer impact rather than stakeholder volume is the hardest habit to build.",
+      },
+      {
+        input: "So insightful! Have you considered testing prototypes with non-core users?",
+        expected: "Have you considered testing prototypes with non-core users?",
+      },
+    ];
+
+    for (const { input, expected } of examples) {
+      assert.equal(cleanSuggestedComment(input), expected);
+    }
+  });
+
+  it("detects and strips fabricated first-person experience", () => {
+    const fakeBackstories = [
+      "When I was an engineer, I used to think roadmaps were set in stone.",
+      "In my previous company, we struggled with sprint velocity.",
+      "At my last job, product analytics was completely siloed.",
+      "In my own journey transitioning from engineering, I learned this the hard way.",
+      "In my team we introduced bi-weekly user feedback sessions.",
+    ];
+
+    for (const text of fakeBackstories) {
+      assert.equal(
+        containsFabricatedBackstory(text),
+        true,
+        `Expected fabricated backstory detection for: "${text}"`
+      );
+    }
+
+    // Strips fabricated sentences while keeping the genuine observation
+    const dirtyComment =
+      "When I was an engineer, I thought PRDs were just task lists. The best product specs act as communication alignment documents. How do you balance PRD detail with dev agility?";
+    const cleaned = stripFabricatedBackstory(dirtyComment);
+    assert.equal(containsFabricatedBackstory(cleaned), false);
+    assert.ok(cleaned.includes("The best product specs act as communication alignment documents."));
+    assert.ok(cleaned.includes("How do you balance PRD detail with dev agility?"));
+  });
+
+  it("flags unnecessary PM acronyms unless grounded in the post", () => {
+    const postWithoutAcronyms = "How do you decide what feature to work on next when user feedback is mixed?";
+    const postWithRice = "We are comparing RICE vs weighted scoring for quarterly planning.";
+
+    // Unnecessary acronym used
+    assert.equal(
+      containsUnnecessaryAcronym("You should use RICE scoring to rank your backlog items.", postWithoutAcronyms),
+      true
+    );
+    assert.equal(
+      containsUnnecessaryAcronym("Have you set up a RACI matrix with engineering?", postWithoutAcronyms),
+      true
+    );
+
+    // Grounded acronym used because post explicitly discusses it
+    assert.equal(
+      containsUnnecessaryAcronym("RICE works well when confidence scores are backed by user interviews.", postWithRice),
+      false
+    );
+  });
+
+  it("determines appropriate segmented outreach angles for candidate types", () => {
+    // 1. Career Switcher
+    const engineer: RawPerson = {
+      name: "Aman Gupta",
+      profileUrl: "https://www.linkedin.com/in/aman-gupta-dev",
+      headline: "Senior Software Engineer transitioning to Product Management",
+      snippets: ["5 years in backend engineering, exploring PM roles"],
+      source: "mock",
+    };
+    assert.equal(determineOutreachAngle(engineer, "career_switcher"), "Career Switcher");
+
+    const analyst: RawPerson = {
+      name: "Priya Shah",
+      profileUrl: "https://www.linkedin.com/in/priya-analytics",
+      headline: "Data Analyst | Aspiring PM",
+      snippets: ["SQL, Tableau, product analytics, transitioning to product"],
+      source: "mock",
+    };
+    assert.equal(determineOutreachAngle(analyst, "career_switcher"), "Career Switcher");
+
+    // 2. Student / APM Aspirant
+    const student: RawPerson = {
+      name: "Karan Patel",
+      profileUrl: "https://www.linkedin.com/in/karan-mba",
+      headline: "MBA Candidate @ ISB | Aspiring Associate Product Manager",
+      snippets: ["Product club head, prepping for PM case interviews"],
+      source: "mock",
+    };
+    assert.equal(determineOutreachAngle(student, "student"), "Student / APM Aspirant");
+
+    // 3. Builder
+    const builder: RawPerson = {
+      name: "Siddharth Rao",
+      profileUrl: "https://www.linkedin.com/in/sid-builder",
+      headline: "Building AI tools for creators | Indie Hacker | Maker",
+      snippets: ["Shipped 3 micro-SaaS products this year"],
+      source: "mock",
+    };
+    assert.equal(determineOutreachAngle(builder, "non_pm_professional"), "Builder");
+  });
+
+  it("cleans generic robotic DM openers while preserving candidate personalization", () => {
+    const roboticDm =
+      "Hope this message finds you well! I saw your profile and wanted to reach out because your background in data analytics would translate directly into product metrics practice on Prodily. We built guided case studies specifically for analysts moving into PM.";
+    const cleaned = cleanSuggestedDm(roboticDm);
+    assert.equal(cleaned.startsWith("Hope this message"), false);
+    assert.equal(cleaned.startsWith("I saw your profile"), false);
+    assert.ok(cleaned.toLowerCase().includes("your background in data analytics would translate directly"));
+  });
+
+  it("adjusts post ranking based on creator scale without hard-deleting mega creators", () => {
+    // Peer / Rising Creator Post
+    const peerPost: RawPost = {
+      authorName: "Ananya Roy",
+      postUrl: "https://www.linkedin.com/posts/ananya-roy_discovery-questions-activity-100",
+      snippet: "Aspiring PM | today 2h ago How do you approach customer discovery interviews? Any advice for someone breaking into product?",
+      source: "mock",
+    };
+    const peerSignals = evaluatePostSignals(peerPost);
+    assert.equal(peerSignals.evidence.creatorScale, "peer_or_rising");
+
+    // Standard Creator Post
+    const standardPost: RawPost = {
+      authorName: "Rohan Verma",
+      postUrl: "https://www.linkedin.com/posts/rohan-verma_discovery-questions-activity-200",
+      snippet: "Product Manager at Startup. today 2h ago Sharing how our product team structures customer discovery sprints across quarter milestones.",
+      source: "mock",
+    };
+    const standardSignals = evaluatePostSignals(standardPost);
+    assert.equal(standardSignals.evidence.creatorScale, "standard_creator");
+
+    // Mega-Influencer Post
+    const megaPost: RawPost = {
+      authorName: "Marty Cagan",
+      postUrl: "https://www.linkedin.com/posts/marty-cagan_discovery-questions-activity-300",
+      snippet: "Partner at Silicon Valley Product Group. Bestselling author. today 2h ago Sharing how our product team structures customer discovery sprints across quarter milestones.",
+      source: "mock",
+    };
+    const megaSignals = evaluatePostSignals(megaPost);
+    assert.equal(megaSignals.evidence.creatorScale, "mega_influencer");
+
+    // Verify creator scale ranking modifier:
+    // Peer creator gets +10 bonus relative to standard
+    assert.ok(peerSignals.overallScore >= standardSignals.overallScore);
+    // Mega influencer receives a -15 penalty relative to standard
+    assert.ok(megaSignals.overallScore < standardSignals.overallScore);
+    // Mega creator is NOT hard-deleted (still has positive score >= 25)
+    assert.ok(megaSignals.overallScore >= 25);
+    assert.equal(megaSignals.evidence.authorName, "Marty Cagan");
+  });
+});
+

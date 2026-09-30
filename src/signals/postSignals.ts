@@ -39,6 +39,18 @@ const BROADCAST_EXCLUSIONS = [
   /\bpress release\b/i,
 ];
 
+// Mega-influencers / celebrity creators / high-reach profiles (for ranking adjustment)
+export const MEGA_CREATOR_PATTERNS = [
+  /\b(melissa perri|marty cagan|lenny rachitsky|shreyas doshi|teresa torres|dan olsen|aakash gupta|carlos gonz[aá]lez de villaumbrosia|rich mironov)\b/i,
+  /\b(bestselling author|keynote speaker|author of escaping|100k\+?\s*followers|50k\+?\s*followers|cpo at|managing partner|venture partner|top voice)\b/i,
+];
+
+// Peer creators, aspiring PMs, APMs, transitioners, and advice seekers
+export const PEER_OR_RISING_PATTERNS = [
+  /\b(aspiring (?:pm|product manager)|associate product manager|apm|junior pm|early-career pm|career switch|career transition|transitioning to product|pivoting to pm|learning pm|new pm|first pm role|pm journey)\b/i,
+  /\b(any advice|how do i|how to break into|seeking feedback|curious how you|what would you do|struggling with|help me decide|open question)\b/i,
+];
+
 // Relative date / freshness patterns
 const FRESH_RELATIVE_PATTERNS = [
   /\b(\d+\s*(?:m|min|minute|minutes|h|hour|hours|d|day|days)\s*ago)\b/i,
@@ -201,7 +213,22 @@ export function evaluatePostSignals(
     engagementEvidence = `Snippet displays engagement: "${engageMatch[0]}"`;
   }
 
-  // 8. Overall Composite Score
+  // 8. Creator Scale Signal (ranking modifier for founder-led peer conversations)
+  let creatorScale: "peer_or_rising" | "mega_influencer" | "standard_creator" = "standard_creator";
+  let creatorScaleEvidence = "Standard product practitioner post";
+
+  const isMega = MEGA_CREATOR_PATTERNS.some((p) => p.test(raw.authorName) || p.test(raw.snippet));
+  const isPeer = PEER_OR_RISING_PATTERNS.some((p) => p.test(raw.authorName) || p.test(raw.snippet));
+
+  if (isPeer && !isMega) {
+    creatorScale = "peer_or_rising";
+    creatorScaleEvidence = "Author is an aspiring PM, APM, switcher, or seeking advice (peer conversation favored)";
+  } else if (isMega) {
+    creatorScale = "mega_influencer";
+    creatorScaleEvidence = "High-reach creator or celebrity PM author (ranking adjusted to favor peer discussion)";
+  }
+
+  // 9. Overall Composite Score
   // 35% relevance + 25% conversation + 20% freshness + 20% activity
   let overallScore = Math.round(
     0.35 * relevanceScore +
@@ -209,6 +236,13 @@ export function evaluatePostSignals(
       0.20 * freshnessScore +
       0.20 * activityScore
   );
+
+  // Apply creator scale ranking adjustment (+10 for peer/rising, -15 for mega influencers)
+  if (creatorScale === "peer_or_rising") {
+    overallScore = Math.min(100, overallScore + 10);
+  } else if (creatorScale === "mega_influencer") {
+    overallScore = Math.max(25, overallScore - 15);
+  }
 
   // Penalize stale or excluded posts
   if (isTooOld) overallScore = Math.min(overallScore, 40);
@@ -230,6 +264,8 @@ export function evaluatePostSignals(
     authorActivityStatus,
     authorActivityEvidence,
     engagementEvidence,
+    creatorScale,
+    creatorScaleEvidence,
     alreadyCommented: !!options.alreadyCommented,
     isDuplicate: !!options.isDuplicate,
   };

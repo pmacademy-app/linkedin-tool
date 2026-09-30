@@ -13,21 +13,66 @@ import { evaluatePeopleSignals } from "../signals/peopleSignals.js";
 
 const ScoredPersonSchema = z.object({
   name: z.string(),
-  profileUrl: z.string().url(),
-  headline: z.string(),
+  profileUrl: z.string(),
+  headline: z.string().default(""),
   icpScore: z.number().min(0).max(100),
-  segment: z.string(),
-  whyRelevant: z.array(z.string()),
-  painPoints: z.array(z.string()),
-  personalizationHook: z.string(),
+  segment: z.string().default("Career Switcher"),
+  whyRelevant: z.array(z.string()).default([]),
+  painPoints: z.array(z.string()).default([]),
+  personalizationHook: z.string().default(""),
   suggestedMessage: z.string(),
-  confidence: z.enum(["high", "medium", "low"]),
-  warnings: z.array(z.string()),
+  confidence: z.enum(["high", "medium", "low"]).default("medium"),
+  warnings: z.array(z.string()).default([]),
 });
 
 const ScoredPeopleResponseSchema = z.object({
   people: z.array(ScoredPersonSchema),
 });
+
+// -- Quality & Segmentation helpers -------------------------------------------
+
+export type OutreachSegment = "Career Switcher" | "Student / APM Aspirant" | "Builder";
+
+export function determineOutreachAngle(
+  raw: RawPerson,
+  careerStage?: string
+): OutreachSegment {
+  const text = `${raw.headline} ${(raw.snippets || []).join(" ")}`.toLowerCase();
+
+  // 1. Builder check: building, founder, maker, shipping, indie, side project, creator
+  if (/\b(building|builder|founder|co-founder|maker|shipped|shipping|indie|side project|creator)\b/i.test(text)) {
+    return "Builder";
+  }
+
+  // 2. Student / APM Aspirant check: student, undergrad, grad, mba, apm aspirant, campus
+  if (
+    careerStage === "student" ||
+    /\b(student|undergraduate|graduate student|mba|apm aspirant|aspiring apm|campus|intern)\b/i.test(text)
+  ) {
+    return "Student / APM Aspirant";
+  }
+
+  // 3. Career switcher check: engineers, analysts, designers, consultants, or explicit switchers
+  return "Career Switcher";
+}
+
+export function cleanSuggestedDm(text: string): string {
+  let cleaned = text.trim();
+  const openerPatterns = [
+    /^(?:hope this message finds you well[!.,]?\s*)/i,
+    /^(?:hope you're having a great week[!.,]?\s*)/i,
+    /^(?:hope you're doing well[!.,]?\s*)/i,
+    /^(?:i came across your profile and (?:noticed|saw)[!.,\s]*)/i,
+    /^(?:i saw your profile and wanted to reach out because[!.,\s]*)/i,
+  ];
+  for (const pat of openerPatterns) {
+    cleaned = cleaned.replace(pat, "").trim();
+  }
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  return cleaned;
+}
 
 // -- Main function with batching ---------------------------------------------
 
@@ -100,12 +145,14 @@ async function scorePeopleBatch(
       const intentStr = sig?.evidence.pmIntentEvidence || "unspecified";
       const actStr = sig?.evidence.activityEvidence || "unknown";
       const needStr = sig?.evidence.learningOrSwitchingNeed || "unspecified";
+      const angle = determineOutreachAngle(p, stageStr);
 
       return (
         "[" + (i + 1) + "] Name: " + p.name + "\n" +
         "    profileUrl: " + p.profileUrl + "\n" +
         "    Headline: " + p.headline + "\n" +
         "    Snippets: " + (p.snippets.join(" | ") || "(none)") + "\n" +
+        "    Recommended Outreach Angle: " + angle + "\n" +
         "    Grounded Career Stage: " + stageStr + "\n" +
         "    PM Intent Evidence: " + intentStr + "\n" +
         "    Activity Evidence: " + actStr + "\n" +
@@ -116,23 +163,42 @@ async function scorePeopleBatch(
     .join("\n\n");
 
   const systemPrompt = [
-    "You are a growth assistant for Prodily, a free structured Product Management",
-    "learning platform for aspiring PMs.",
+    "You are writing founder-to-peer outreach messages for Prodily, a structured",
+    "Product Management learning platform for aspiring PMs and builders.",
     "",
     ICP_DEFINITION,
     "",
-    "IMPORTANT RULES:",
-    "- Do NOT invent any personal information. Only use the data and grounded signals provided below.",
-    "- If you cannot personalise due to insufficient information, say so in the",
-    "  warnings field and write a conservative, generic message.",
-    "- The suggested DM must be short (max 5 sentences), natural, non-spammy,",
-    "  founder-to-person in tone. Goal: invite the person to try Prodily and give",
-    "  honest feedback. Do NOT use fake familiarity, false claims, or pressure.",
-    "- Do NOT use manipulative language, urgency, fake social proof, or misleading statements.",
+    "OUTREACH ANGLES (Select and apply the designated angle per candidate):",
+    "",
+    "1. CAREER SWITCHERS (Engineers, Analysts, Designers, Consultants moving to PM):",
+    "   - Focus: Explain how Prodily helps translate their existing domain experience",
+    "     into PM portfolio evidence, structured case studies, and PRDs.",
+    "   - Tone: Professional, peer-to-peer, recognizing their functional strengths.",
+    "",
+    "2. STUDENTS / APM ASPIRANTS (Students, MBA candidates, APM seekers):",
+    "   - Focus: Structured practice, product sense, execution, interview prep, and",
+    "     building demonstrable evidence of PM ability.",
+    "   - Tone: Encouraging, practical, coaching/peer vibe.",
+    "",
+    "3. BUILDERS (Founders, side-project builders, indie makers):",
+    "   - Focus: Peer-to-peer connection around what they are building or shipping.",
+    "   - Angle: How Prodily provides structured product strategy and prioritisation",
+    "     alongside their active building work.",
+    "   - Tone: Builder-to-builder, concise, no fluff.",
+    "",
+    "STRICT DM QUALITY RULES (PREVENT TEMPLATE COLLAPSE):",
+    "- MENTION SPECIFIC DETAILS: Ground the message in a genuinely specific detail from their",
+    "  headline or snippets (their specific background, university, project, or role) whenever available.",
+    "- NEVER FABRICATE: Never invent facts, projects, or background not found in the profile.",
+    "- EXPLAIN SPECIFIC VALUE: Explain why Prodily is useful specifically to their situation.",
+    "- NEVER ASK FOR FEEDBACK FIRST: Do not ask for feedback before establishing clear value.",
+    "- AVOID MASS TEMPLATES: Strictly avoid robotic openers like 'Hope you are doing well',",
+    "  'I came across your profile and noticed', or 'I was impressed by'. Vary sentence structure naturally.",
+    "- CONCISE & HUMAN: Max 3 to 4 sentences. Write like an authentic human founder reaching out 1-on-1.",
     "- Score icpScore 0-100.",
     "",
     "Respond with ONLY valid JSON in this exact shape (no markdown fences):",
-    '{"people":[{"name":"...","profileUrl":"...","headline":"...","icpScore":85,"segment":"Career Switcher","whyRelevant":["reason 1"],"painPoints":["pain 1"],"personalizationHook":"...","suggestedMessage":"...","confidence":"high","warnings":[]}]}',
+    '{"people":[{"name":"...","profileUrl":"...","headline":"...","icpScore":85,"segment":"Career Switcher|Student / APM Aspirant|Builder","whyRelevant":["..."],"painPoints":["..."],"personalizationHook":"...","suggestedMessage":"...","confidence":"high|medium|low","warnings":[]}]}',
   ].join("\n");
 
   const userPrompt = `Score and rank these ${batch.length} LinkedIn profile candidates:\n\n${candidateList}`;
@@ -149,5 +215,11 @@ async function scorePeopleBatch(
     }
   );
 
-  return result.people;
+  return result.people.map((p) => {
+    let msg = cleanSuggestedDm(p.suggestedMessage);
+    return {
+      ...p,
+      suggestedMessage: msg,
+    };
+  });
 }
