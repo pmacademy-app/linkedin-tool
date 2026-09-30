@@ -93,12 +93,13 @@ export function evaluatePostSignals(
     isDuplicate?: boolean;
   } = {}
 ): PostScoreBreakdown {
-  const text = `${raw.authorName} ${raw.snippet}`.toLowerCase();
+  const snippetText = raw.snippet || "";
+  const text = `${raw.authorName} ${snippetText}`.toLowerCase();
 
   // 1. Topic Identification
   let topic = "General Product Management";
   for (const t of PM_TOPICS) {
-    if (t.pattern.test(raw.snippet)) {
+    if (t.pattern.test(snippetText)) {
       topic = t.name;
       break;
     }
@@ -120,8 +121,8 @@ export function evaluatePostSignals(
   let isTooOld = false;
   let freshnessScore = 50; // default unknown
 
-  const freshMatch = raw.snippet.match(FRESH_RELATIVE_PATTERNS[0]!) || raw.snippet.match(FRESH_RELATIVE_PATTERNS[1]!);
-  const staleMatch = raw.snippet.match(STALE_DATE_PATTERNS[0]!) || raw.snippet.match(STALE_DATE_PATTERNS[1]!);
+  const freshMatch = snippetText.match(FRESH_RELATIVE_PATTERNS[0]!) || snippetText.match(FRESH_RELATIVE_PATTERNS[1]!);
+  const staleMatch = snippetText.match(STALE_DATE_PATTERNS[0]!) || snippetText.match(STALE_DATE_PATTERNS[1]!);
 
   if (freshMatch) {
     freshnessStatus = "verified";
@@ -133,7 +134,7 @@ export function evaluatePostSignals(
     dateEvidence = `Post date appears older than desirable: "${staleMatch[0]}"`;
     freshnessScore = 20;
     isTooOld = true;
-  } else if (raw.snippet.includes("ago")) {
+  } else if (snippetText.includes("ago")) {
     freshnessStatus = "inferred";
     dateEvidence = "Snippet contains relative time markers";
     freshnessScore = 70;
@@ -144,22 +145,22 @@ export function evaluatePostSignals(
   let conversationEvidence = "No explicit question or discussion trigger detected";
   let conversationScore = 40;
 
-  const hasExclusion = BROADCAST_EXCLUSIONS.some((p) => p.test(raw.snippet));
+  const hasExclusion = BROADCAST_EXCLUSIONS.some((p) => p.test(snippetText));
   if (hasExclusion) {
     conversationStatus = "verified";
     conversationEvidence = "Broadcast, recruitment, or commercial announcement";
     conversationScore = 15;
   } else {
-    const triggerMatch = CONVERSATION_TRIGGERS.find((p) => p.test(raw.snippet));
+    const triggerMatch = CONVERSATION_TRIGGERS.find((p) => p.test(snippetText));
     if (triggerMatch) {
       conversationStatus = "verified";
       conversationEvidence = "Contains direct question or request for feedback/discussion";
       conversationScore = 90;
     } else if (
-      raw.snippet.includes("learn") ||
-      raw.snippet.includes("experience") ||
-      raw.snippet.includes("journey") ||
-      raw.snippet.includes("struggle")
+      snippetText.includes("learn") ||
+      snippetText.includes("experience") ||
+      snippetText.includes("journey") ||
+      snippetText.includes("struggle")
     ) {
       conversationStatus = "inferred";
       conversationEvidence = "Personal reflective post conducive to insightful comment";
@@ -174,7 +175,7 @@ export function evaluatePostSignals(
 
   let topicMatches = 0;
   for (const t of PM_TOPICS) {
-    if (t.pattern.test(raw.snippet)) topicMatches++;
+    if (t.pattern.test(snippetText)) topicMatches++;
   }
 
   if (topicMatches >= 2) {

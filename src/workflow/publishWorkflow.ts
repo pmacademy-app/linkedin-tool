@@ -5,7 +5,7 @@
 import chalk from "chalk";
 import ora from "ora";
 import { GrowthRepository } from "../database/repository.js";
-import { isAuthorized } from "../linkedin/auth.js";
+import { isAuthorized, hasValidToken, getPersonUrn } from "../linkedin/auth.js";
 import { publishComment } from "../linkedin/comments.js";
 import { sleep } from "../discovery/firecrawl.js";
 
@@ -14,6 +14,8 @@ const DIVIDER = chalk.dim("=".repeat(56));
 export interface PublishWorkflowOptions {
   resume?: boolean;
   dryRun?: boolean;
+  limit?: number;
+  commentId?: string;
 }
 
 export async function runPublishWorkflow(
@@ -23,6 +25,8 @@ export async function runPublishWorkflow(
   const session = repo.createSession("publish-comments", {
     dryRun: !!options.dryRun,
     resume: !!options.resume,
+    limit: options.limit,
+    commentId: options.commentId,
   });
 
   console.log(chalk.bold.cyan("\n  === OFFICIAL LINKEDIN COMMENT PUBLISHING ==="));
@@ -30,9 +34,18 @@ export async function runPublishWorkflow(
   if (options.dryRun) {
     console.log(chalk.yellow("  [DRY RUN] Will simulate publishing without calling LinkedIn API."));
   }
+  if (options.limit && options.limit > 0) {
+    console.log(chalk.cyan.bold(`  [CONTROLLED RUN] Enforcing limit: at most ${options.limit} approved comment(s) will be published.`));
+  }
+  if (options.commentId) {
+    console.log(chalk.cyan.bold(`  [TARGETED RUN] Targeting specific comment ID: ${options.commentId}`));
+  }
 
-  // 1. Load ONLY comments with durable status 'approved'
-  const approvedItems = repo.getApprovedCommentsForPublishing();
+  // 1. Load ONLY comments with durable status 'approved' (filtered by limit / commentId)
+  const approvedItems = repo.getApprovedCommentsForPublishing({
+    limit: options.limit,
+    commentId: options.commentId,
+  });
 
   if (approvedItems.length === 0) {
     console.log(chalk.yellow("\n  No approved comments ready for publishing."));
@@ -48,22 +61,35 @@ export async function runPublishWorkflow(
 
   console.log(
     chalk.white(
-      `  Found ${chalk.green.bold(approvedItems.length)} comment(s) with durable status 'approved'.\n`
+      `  Found ${chalk.green.bold(approvedItems.length)} comment(s) ready for publishing with durable status 'approved'.\n`
     )
   );
 
   // 2. Verify OAuth authorization (do NOT silently fall back to manual!)
   if (!isAuthorized() && !options.dryRun) {
-    console.log(chalk.red.bold("  ERROR: LinkedIn API is not authorized."));
-    console.log(
-      chalk.yellow(
-        "\n  --publish-comments requires official LinkedIn API authorization.\n" +
-          "  To authorize, run:\n" +
-          "    npm run growth --linkedin-auth\n\n" +
-          "  (If you want to manually copy comments to clipboard instead,\n" +
-          "  use: npm run growth --manual-comments)\n"
-      )
-    );
+    if (hasValidToken() && !getPersonUrn()) {
+      console.log(chalk.red.bold("  ERROR: LinkedIn access token is valid, but member person URN is missing."));
+      console.log(
+        chalk.yellow(
+          "\n  LinkedIn API comment publishing requires an actor person URN.\n" +
+          "  Your LinkedIn Developer App has 'Share on LinkedIn' (w_member_social), but cannot read profile info.\n\n" +
+          "  To fix this, add your person URN to .env:\n" +
+          "    " + chalk.cyan("LINKEDIN_PERSON_URN=urn:li:person:<your_member_id>\n\n") +
+          "  (Or enable 'Sign In with LinkedIn using OpenID Connect' in the LinkedIn Developer Portal and re-authorize.)\n"
+        )
+      );
+    } else {
+      console.log(chalk.red.bold("  ERROR: LinkedIn API is not authorized."));
+      console.log(
+        chalk.yellow(
+          "\n  --publish-comments requires official LinkedIn API authorization.\n" +
+            "  To authorize, run:\n" +
+            "    npm run growth --linkedin-auth\n\n" +
+            "  (If you want to manually copy comments to clipboard instead,\n" +
+            "  use: npm run growth --manual-comments)\n"
+        )
+      );
+    }
     repo.completeSession(session.id, "failed");
     return;
   }

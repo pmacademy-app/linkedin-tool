@@ -179,16 +179,57 @@ export async function firecrawlSearch(
 // URL helpers shared by people and posts providers
 // ---------------------------------------------------------------------------
 
-export function extractLinkedInProfileUrl(url: string): string | null {
+/**
+ * Normalizes any LinkedIn profile URL into a canonical format:
+ *   https://www.linkedin.com/in/<username>
+ *
+ * Handles:
+ * - Trailing slashes: /in/john-doe/ -> /in/john-doe
+ * - Query parameters: /in/john-doe?miniProfileUrn=...&trk=... -> /in/john-doe
+ * - Hash fragments: /in/john-doe#experience -> /in/john-doe
+ * - Country subdomains: in.linkedin.com, uk.linkedin.com, ca.linkedin.com -> www.linkedin.com
+ * - Protocol variants: http:// -> https://
+ * - Case variations: /in/John-Doe -> /in/john-doe
+ * - Extra path segments: /in/john-doe/overlay/contact-info/ -> /in/john-doe
+ * - Excludes non-profile URLs (company, jobs, school, pulse)
+ */
+export function normalizeLinkedInProfileUrl(url: string): string | null {
+  if (!url || typeof url !== "string") return null;
   try {
-    const u = new URL(url);
-    if (!u.hostname.includes("linkedin.com")) return null;
-    const match = u.pathname.match(/^\/in\/[^/?#]+/);
-    if (!match) return null;
-    return `https://www.linkedin.com${match[0]}`;
+    const raw = url.trim();
+    const parsed = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes("linkedin.com")) return null;
+
+    // Exclude non-person routes
+    const pathLower = parsed.pathname.toLowerCase();
+    if (
+      pathLower.startsWith("/company/") ||
+      pathLower.startsWith("/school/") ||
+      pathLower.startsWith("/jobs/") ||
+      pathLower.startsWith("/pulse/") ||
+      pathLower.startsWith("/posts/") ||
+      pathLower.startsWith("/feed/")
+    ) {
+      return null;
+    }
+
+    // Match /in/<username> segment
+    const match = parsed.pathname.match(/\/in\/([^/?#]+)/i);
+    if (!match?.[1]) return null;
+
+    let slug = decodeURIComponent(match[1]).trim().toLowerCase();
+    slug = slug.replace(/\/+$/, "");
+    if (!slug) return null;
+
+    return `https://www.linkedin.com/in/${slug}`;
   } catch {
     return null;
   }
+}
+
+export function extractLinkedInProfileUrl(url: string): string | null {
+  return normalizeLinkedInProfileUrl(url);
 }
 
 export function isLinkedInPostUrl(url: string): boolean {

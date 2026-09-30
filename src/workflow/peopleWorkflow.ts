@@ -4,13 +4,19 @@
  */
 import chalk from "chalk";
 import ora from "ora";
-import { MAX_PEOPLE, SEARCH_PROVIDER, AI_PROVIDER } from "../config.js";
+import {
+  MAX_PEOPLE,
+  SEARCH_PROVIDER,
+  AI_PROVIDER,
+  SKIPPED_PERSON_COOLDOWN_DAYS,
+} from "../config.js";
 import { getPeopleProvider } from "../discovery/people.js";
+import { normalizeLinkedInProfileUrl } from "../discovery/firecrawl.js";
 import { evaluatePeopleSignals } from "../signals/peopleSignals.js";
 import type { PeopleScoreBreakdown } from "../signals/types.js";
 import { scorePeople } from "../ai/people.js";
 import type { RawPerson } from "../storage/models.js";
-import { GrowthRepository } from "../database/repository.js";
+import { GrowthRepository, normaliseCanonicalUrl } from "../database/repository.js";
 
 export interface PeopleWorkflowOptions {
   resume?: boolean;
@@ -27,6 +33,7 @@ export async function runPeopleWorkflow(
     maxPeople: MAX_PEOPLE,
     resume: !!options.resume,
     dryRun: !!options.dryRun,
+    skippedCooldownDays: SKIPPED_PERSON_COOLDOWN_DAYS,
   });
 
   console.log(chalk.bold.cyan("\n  === PEOPLE DISCOVERY & SCORING ==="));
@@ -37,11 +44,12 @@ export async function runPeopleWorkflow(
     console.log(chalk.dim("  [RESUME] Checking for unreviewed or existing discovered candidates..."));
   }
 
-  let rawCandidates: RawPerson[] = [];
-  const knownUrls = repo.getAllKnownProfileUrls();
+  // Load existing ineligibility map (approved, contacted, pending, cooling down)
+  const ineligibleMap = repo.getIneligibleProfileMap({
+    skippedCooldownDays: SKIPPED_PERSON_COOLDOWN_DAYS,
+  });
 
   if (options.resume) {
-    // If resume is active, check if we already have pending reviews
     const pending = repo.getPendingPersonReviews();
     if (pending.length > 0) {
       console.log(
@@ -53,6 +61,7 @@ export async function runPeopleWorkflow(
 
   // Discover fresh candidates
   const spinner = ora(`Discovering people via ${SEARCH_PROVIDER}...`).start();
+  let rawCandidates: RawPerson[] = [];
   try {
     const raw = await getPeopleProvider().discoverPeople(MAX_PEOPLE);
     rawCandidates = raw;
@@ -63,20 +72,39 @@ export async function runPeopleWorkflow(
     throw err;
   }
 
-  // Filter out profiles already in database (unless re-discovered)
+  // Cross-run & Intra-run Deduplication and Lifecycle Filtering
+  const seenInRun = new Set<string>();
   const newCandidates: RawPerson[] = [];
-  let existingCount = 0;
+  let duplicatesInRunCount = 0;
+  let suppressedApprovedCount = 0;
+  let suppressedContactedCount = 0;
+  let suppressedPendingCount = 0;
+  let suppressedSkippedCooldownCount = 0;
 
   for (const c of rawCandidates) {
-    const norm = c.profileUrl.trim().toLowerCase().replace(/\/$/, "");
-    if (knownUrls.has(norm)) {
-      existingCount++;
+    const canonical = normalizeLinkedInProfileUrl(c.profileUrl) || normaliseCanonicalUrl(c.profileUrl);
+
+    // 1. Deduplicate within the same discovery run
+    if (seenInRun.has(canonical)) {
+      duplicatesInRunCount++;
+      continue;
+    }
+    seenInRun.add(canonical);
+
+    // 2. Check existing SQLite history
+    const ineligibility = ineligibleMap.get(canonical);
+    if (ineligibility) {
+      if (ineligibility === "already_approved") suppressedApprovedCount++;
+      else if (ineligibility === "already_contacted") suppressedContactedCount++;
+      else if (ineligibility === "pending_review") suppressedPendingCount++;
+      else if (ineligibility === "skipped_cooldown") suppressedSkippedCooldownCount++;
+
+      // Non-destructively record re-discovery timestamp in database
       if (!options.dryRun) {
-        // Record re-discovery timestamp in database
-        const signals = evaluatePeopleSignals(c);
+        const signals = evaluatePeopleSignals({ ...c, profileUrl: canonical });
         repo.upsertPerson(
           {
-            profileUrl: c.profileUrl,
+            profileUrl: canonical,
             name: c.name,
             headline: c.headline,
             rawData: c,
@@ -90,19 +118,39 @@ export async function runPeopleWorkflow(
           session.id
         );
       }
-    } else {
-      newCandidates.push(c);
+      continue;
     }
+
+    newCandidates.push({
+      ...c,
+      profileUrl: canonical,
+    });
   }
 
-  if (existingCount > 0) {
-    console.log(
-      chalk.dim(`  ${existingCount} candidate(s) already existed in database (updated last_seen_at).`)
-    );
+  // Print transparent candidate audit summary
+  console.log(chalk.dim("  --------------------------------------------------------"));
+  console.log(chalk.bold("  CANDIDATE DISCOVERY AUDIT:"));
+  console.log(`    Total Discovered           : ${chalk.white.bold(rawCandidates.length)}`);
+  if (duplicatesInRunCount > 0) {
+    console.log(`    Duplicates in Same Run     : ${chalk.yellow(duplicatesInRunCount)}`);
   }
+  if (suppressedApprovedCount > 0) {
+    console.log(`    Suppressed (Already Approved): ${chalk.yellow(suppressedApprovedCount)}`);
+  }
+  if (suppressedContactedCount > 0) {
+    console.log(`    Suppressed (Already Contacted): ${chalk.yellow(suppressedContactedCount)}`);
+  }
+  if (suppressedPendingCount > 0) {
+    console.log(`    Suppressed (Already in Queue): ${chalk.yellow(suppressedPendingCount)}`);
+  }
+  if (suppressedSkippedCooldownCount > 0) {
+    console.log(`    Suppressed (Skipped Cooldown) : ${chalk.yellow(suppressedSkippedCooldownCount)}`);
+  }
+  console.log(`    Genuinely New Candidates   : ${chalk.green.bold(newCandidates.length)}`);
+  console.log(chalk.dim("  --------------------------------------------------------"));
 
   if (newCandidates.length === 0) {
-    console.log(chalk.yellow("  No new people candidates to process today."));
+    console.log(chalk.yellow("  No new people candidates to process today (all filtered as existing/approved/cooling)."));
     repo.completeSession(session.id, "completed");
     return;
   }

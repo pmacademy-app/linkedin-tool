@@ -15,6 +15,7 @@ import {
 import {
   firecrawlSearch,
   extractLinkedInProfileUrl,
+  normalizeLinkedInProfileUrl,
   cleanTitle,
   sleep,
   getInterQueryDelayMs,
@@ -37,14 +38,27 @@ export interface PeopleDiscoveryProvider {
 // Dedupe helper
 // ---------------------------------------------------------------------------
 
-function dedupeByProfileUrl(people: RawPerson[]): RawPerson[] {
-  const seen = new Set<string>();
-  return people.filter((p) => {
-    const key = p.profileUrl.toLowerCase().replace(/\/$/, "");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+export function dedupeByProfileUrl(people: RawPerson[]): RawPerson[] {
+  const map = new Map<string, RawPerson>();
+  for (const p of people) {
+    const canonical = normalizeLinkedInProfileUrl(p.profileUrl) || p.profileUrl.toLowerCase().replace(/\/$/, "");
+    if (!map.has(canonical)) {
+      map.set(canonical, {
+        ...p,
+        profileUrl: canonical,
+      });
+    } else {
+      const existing = map.get(canonical)!;
+      // Preserve candidate with richer headline or snippets
+      if ((p.headline?.length || 0) > (existing.headline?.length || 0)) {
+        map.set(canonical, {
+          ...p,
+          profileUrl: canonical,
+        });
+      }
+    }
+  }
+  return Array.from(map.values());
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +93,7 @@ class FirecrawlPeopleProvider implements PeopleDiscoveryProvider {
           // Skip obvious non-person LinkedIn URLs
           if (this.isCompanyOrJobUrl(item.url)) continue;
 
-          const normUrl = profileUrl.toLowerCase().replace(/\/$/, "");
+          const normUrl = normalizeLinkedInProfileUrl(profileUrl) || profileUrl;
           if (seenUrls.has(normUrl)) continue;
           seenUrls.add(normUrl);
 
@@ -89,7 +103,7 @@ class FirecrawlPeopleProvider implements PeopleDiscoveryProvider {
           if (item.description) snippets.push(item.description);
           if (item.markdown) snippets.push(item.markdown.slice(0, 500));
 
-          collected.push({ profileUrl, name, headline, snippets, source: "firecrawl" });
+          collected.push({ profileUrl: normUrl, name, headline, snippets, source: "firecrawl" });
 
           if (collected.length >= limit) {
             break;

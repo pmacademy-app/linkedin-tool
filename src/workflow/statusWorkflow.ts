@@ -5,7 +5,7 @@
 import chalk from "chalk";
 import fs from "node:fs";
 import { GrowthRepository } from "../database/repository.js";
-import { isAuthorized } from "../linkedin/auth.js";
+import { isAuthorized, hasValidToken, getPersonUrn } from "../linkedin/auth.js";
 import { getDatabasePath } from "../database/connection.js";
 
 const DIVIDER = chalk.dim("=".repeat(56));
@@ -17,18 +17,25 @@ export function runStatusWorkflow(repo: GrowthRepository): void {
   const dbSizeKb = dbExists ? Math.round(fs.statSync(dbPath).size / 1024) : 0;
   const authorized = isAuthorized();
 
+  let linkedinStatusStr: string;
+  if (authorized) {
+    const actor = getPersonUrn() ?? "";
+    linkedinStatusStr = chalk.green.bold(`AUTHORIZED (Ready for publishing | Actor: ${actor})`);
+  } else if (hasValidToken()) {
+    linkedinStatusStr = chalk.yellow.bold(
+      "TOKEN VALID, BUT PERSON URN MISSING (Set LINKEDIN_PERSON_URN in .env)"
+    );
+  } else {
+    linkedinStatusStr = chalk.yellow("NOT AUTHORIZED (Run: npm run growth --linkedin-auth)");
+  }
+
   console.log();
   console.log(chalk.bgMagenta.white.bold("  PRODILY GROWTH OS -- SYSTEM STATUS  "));
   console.log(DIVIDER);
 
   // System & Connection State
   console.log(chalk.bold("  Database:     ") + chalk.cyan(dbPath) + chalk.dim(` (${dbSizeKb} KB)`));
-  console.log(
-    chalk.bold("  LinkedIn API: ") +
-      (authorized
-        ? chalk.green.bold("AUTHORIZED (Ready for automated comment publishing)")
-        : chalk.yellow("NOT AUTHORIZED (Run: npm run growth --linkedin-auth)"))
-  );
+  console.log(chalk.bold("  LinkedIn API: ") + linkedinStatusStr);
   console.log(DIVIDER);
 
   // People Breakdown

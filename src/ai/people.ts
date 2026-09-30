@@ -4,10 +4,11 @@
  */
 import { z } from "zod";
 import { getAiClient, getMockAiClient, chatJson } from "./client.js";
-import { ICP_DEFINITION, MAX_PEOPLE, AI_PROVIDER } from "../config.js";
+import { ICP_DEFINITION, MAX_PEOPLE, AI_PROVIDER, FOUNDER_CONTEXT } from "../config.js";
 import type { RawPerson, ScoredPerson } from "../storage/models.js";
 import type { PeopleScoreBreakdown } from "../signals/types.js";
 import { evaluatePeopleSignals } from "../signals/peopleSignals.js";
+import { containsFabricatedBackstory, stripFabricatedBackstory } from "./posts.js";
 
 // -- Zod schema ---------------------------------------------------------------
 
@@ -67,6 +68,9 @@ export function cleanSuggestedDm(text: string): string {
   ];
   for (const pat of openerPatterns) {
     cleaned = cleaned.replace(pat, "").trim();
+  }
+  if (containsFabricatedBackstory(cleaned)) {
+    cleaned = stripFabricatedBackstory(cleaned);
   }
   if (cleaned.length > 0) {
     cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
@@ -163,8 +167,9 @@ async function scorePeopleBatch(
     .join("\n\n");
 
   const systemPrompt = [
-    "You are writing founder-to-peer outreach messages for Prodily, a structured",
-    "Product Management learning platform for aspiring PMs and builders.",
+    "You are writing founder-to-peer outreach messages on behalf of Aditya Gangwani, founder of Prodily.",
+    "",
+    FOUNDER_CONTEXT.promptBlock,
     "",
     ICP_DEFINITION,
     "",
@@ -190,6 +195,7 @@ async function scorePeopleBatch(
     "- MENTION SPECIFIC DETAILS: Ground the message in a genuinely specific detail from their",
     "  headline or snippets (their specific background, university, project, or role) whenever available.",
     "- NEVER FABRICATE: Never invent facts, projects, or background not found in the profile.",
+    "- STRICT FOUNDER CONTEXT: Never invent past employers, previous roles, or past career transitions for Aditya.",
     "- EXPLAIN SPECIFIC VALUE: Explain why Prodily is useful specifically to their situation.",
     "- NEVER ASK FOR FEEDBACK FIRST: Do not ask for feedback before establishing clear value.",
     "- AVOID MASS TEMPLATES: Strictly avoid robotic openers like 'Hope you are doing well',",
@@ -217,9 +223,15 @@ async function scorePeopleBatch(
 
   return result.people.map((p) => {
     let msg = cleanSuggestedDm(p.suggestedMessage);
+    const warnings = [...(p.warnings || [])];
+    if (containsFabricatedBackstory(msg)) {
+      msg = stripFabricatedBackstory(msg);
+      warnings.push("Prevented fabricated first-person backstory");
+    }
     return {
       ...p,
       suggestedMessage: msg,
+      warnings,
     };
   });
 }

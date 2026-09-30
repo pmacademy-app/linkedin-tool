@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import { getAiClient, getMockAiClient, chatJson } from "./client.js";
-import { ICP_DEFINITION, MAX_POSTS, AI_PROVIDER } from "../config.js";
+import { ICP_DEFINITION, MAX_POSTS, AI_PROVIDER, FOUNDER_CONTEXT } from "../config.js";
 import type { RawPost, ScoredPost } from "../storage/models.js";
 import type { PostScoreBreakdown } from "../signals/types.js";
 import { evaluatePostSignals } from "../signals/postSignals.js";
@@ -57,13 +57,16 @@ export function cleanSuggestedComment(text: string): string {
 
 export function containsFabricatedBackstory(text: string): boolean {
   const patterns = [
-    /\bwhen i was an? (?:engineer|analyst|developer|designer|sde)\b/i,
+    /\bwhen i was an? (?:engineer|analyst|developer|designer|sde|pm|product manager|consultant)\b/i,
     /\bin my previous company\b/i,
     /\bat my last job\b/i,
     /\bin my own journey\b/i,
-    /\bin my team we introduced\b/i,
+    /\bin my career\b/i,
+    /\b(?:on|in) my team\b/i,
     /\bmy analytics background\b/i,
+    /\bmy engineering background\b/i,
     /\bwhen transitioning from engineering\b/i,
+    /\bwhen i worked at\b/i,
   ];
   return patterns.some((p) => p.test(text));
 }
@@ -76,13 +79,16 @@ export function stripFabricatedBackstory(text: string): string {
   }
   let cleaned = text;
   const patterns = [
-    /\bwhen i was an? (?:engineer|analyst|developer|designer|sde)[^,.!?]*[,.]?\s*/gi,
+    /\bwhen i was an? (?:engineer|analyst|developer|designer|sde|pm|product manager|consultant)[^,.!?]*[,.]?\s*/gi,
     /\bin my previous company[^,.!?]*[,.]?\s*/gi,
     /\bat my last job[^,.!?]*[,.]?\s*/gi,
     /\bin my own journey[^,.!?]*[,.]?\s*/gi,
-    /\bin my team we introduced[^,.!?]*[,.]?\s*/gi,
+    /\bin my career[^,.!?]*[,.]?\s*/gi,
+    /\b(?:on|in) my team[^,.!?]*[,.]?\s*/gi,
     /\bmy analytics background[^,.!?]*[,.]?\s*/gi,
+    /\bmy engineering background[^,.!?]*[,.]?\s*/gi,
     /\bwhen transitioning from engineering[^,.!?]*[,.]?\s*/gi,
+    /\bwhen i worked at [^,.!?]*[,.]?\s*/gi,
   ];
   for (const pat of patterns) {
     cleaned = cleaned.replace(pat, "").trim();
@@ -189,11 +195,13 @@ async function scorePostsBatch(
     .join("\n\n");
 
   const systemPrompt = [
-    "You are a growth assistant for Prodily, a structured Product Management learning platform.",
+    "You are a growth assistant drafting LinkedIn comments on behalf of Aditya Gangwani, founder of Prodily.",
+    "",
+    FOUNDER_CONTEXT.promptBlock,
     "",
     ICP_DEFINITION,
     "",
-    "TASK: Select and rank LinkedIn posts where a genuine, value-adding comment can be made.",
+    "TASK: Select and rank LinkedIn posts where Aditya can make a genuine, value-adding comment.",
     "Prioritize founder-led peer conversations with aspiring PMs, APMs, career switchers,",
     "rising PM creators, and people actively asking questions or seeking advice.",
     "Posts from mega-influencers should only be ranked highly if exceptionally relevant.",

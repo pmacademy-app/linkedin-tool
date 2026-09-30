@@ -17,6 +17,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import chalk from "chalk";
 import { LINKEDIN } from "../config.js";
 import { openInBrowser } from "../utils/browser.js";
 
@@ -27,7 +28,7 @@ const TOKEN_PATH = path.resolve(__dirname, "../../data/linkedin-auth.json");
 // Token storage types
 // ---------------------------------------------------------------------------
 
-interface LinkedInToken {
+export interface LinkedInToken {
   accessToken: string;      // Never logged to terminal
   expiresAt: number;        // Unix ms
   refreshToken?: string;
@@ -48,8 +49,28 @@ export function loadToken(): LinkedInToken | null {
   }
 }
 
-function saveToken(token: LinkedInToken): void {
+export function normalizePersonUrn(raw: string): string {
+  if (!raw || typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  const cleanedId = trimmed
+    .replace(/^urn:li:person:/i, "")
+    .replace(/^urn:li:member:/i, "")
+    .replace(/^urn:li:person:/i, "")
+    .trim();
+  return cleanedId ? `urn:li:person:${cleanedId}` : "";
+}
+
+export function saveToken(token: LinkedInToken): void {
   fs.mkdirSync(path.dirname(TOKEN_PATH), { recursive: true });
+  // If token.personUrn is not set, attempt to populate from environment fallback
+  if (!token.personUrn) {
+    const envUrn = process.env["LINKEDIN_PERSON_URN"];
+    if (envUrn && envUrn.trim()) {
+      token.personUrn = normalizePersonUrn(envUrn);
+    }
+  } else {
+    token.personUrn = normalizePersonUrn(token.personUrn);
+  }
   // Write with restricted permissions — tokens stay local only
   fs.writeFileSync(TOKEN_PATH, JSON.stringify(token, null, 2), {
     encoding: "utf-8",
@@ -65,11 +86,26 @@ export function clearToken(): void {
 // Auth state checks
 // ---------------------------------------------------------------------------
 
-export function isAuthorized(): boolean {
+/**
+ * Checks whether an unexpired OAuth access token is stored.
+ */
+export function hasValidToken(): boolean {
   const token = loadToken();
   if (!token) return false;
-  if (Date.now() >= token.expiresAt) return false; // expired
-  return true;
+  if (Date.now() >= token.expiresAt) return false;
+  return Boolean(token.accessToken);
+}
+
+/**
+ * Checks whether LinkedIn API is ready for automated comment publishing.
+ * Publishing comments REQUIRES BOTH:
+ *  1. An unexpired access token (with w_member_social scope)
+ *  2. A member person URN (urn:li:person:<id>) to act as author/actor
+ */
+export function isAuthorized(): boolean {
+  const token = getAccessToken();
+  const personUrn = getPersonUrn();
+  return Boolean(token && personUrn);
 }
 
 export function getAccessToken(): string | null {
@@ -80,7 +116,21 @@ export function getAccessToken(): string | null {
 }
 
 export function getPersonUrn(): string | null {
-  return loadToken()?.personUrn ?? null;
+  // 1. Persisted token storage (explicit actor bound to token)
+  const token = loadToken();
+  if (token?.personUrn && token.personUrn.trim()) {
+    const normalized = normalizePersonUrn(token.personUrn);
+    if (normalized) return normalized;
+  }
+
+  // 2. Explicit environment variable fallback
+  const envUrn = process.env["LINKEDIN_PERSON_URN"];
+  if (envUrn && envUrn.trim()) {
+    const normalized = normalizePersonUrn(envUrn);
+    if (normalized) return normalized;
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,20 +191,44 @@ async function exchangeCodeForToken(code: string): Promise<LinkedInToken> {
 }
 
 async function fetchPersonUrn(accessToken: string): Promise<string | undefined> {
+  // 1. If configured in environment or config, return immediately
+  const envUrn = process.env["LINKEDIN_PERSON_URN"] || LINKEDIN.personUrn;
+  if (envUrn && envUrn.trim()) {
+    const trimmed = envUrn.trim();
+    return trimmed.startsWith("urn:li:person:") ? trimmed : `urn:li:person:${trimmed}`;
+  }
+
+  // 2. Try OpenID userinfo endpoint (available if 'Sign In with LinkedIn using OpenID Connect' is enabled)
   try {
-    // Use OpenID userinfo endpoint to get the member sub (LinkedIn person ID)
     const res = await fetch("https://api.linkedin.com/v2/userinfo", {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
-    if (!res.ok) return undefined;
-    const data = (await res.json()) as { sub?: string };
-    if (!data.sub) return undefined;
-    return `urn:li:person:${data.sub}`;
+    if (res.ok) {
+      const data = (await res.json()) as { sub?: string };
+      if (data.sub) return `urn:li:person:${data.sub}`;
+    }
   } catch {
-    return undefined;
+    // Network or parse error -- proceed to next fallback
   }
+
+  // 3. Try legacy member profile endpoint
+  try {
+    const res = await fetch("https://api.linkedin.com/v2/me", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { id?: string };
+      if (data.id) return `urn:li:person:${data.id}`;
+    }
+  } catch {
+    // Network or parse error -- proceed to return undefined
+  }
+
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,9 +355,23 @@ export async function runOAuthFlow(): Promise<void> {
   const token = await exchangeCodeForToken(code);
   saveToken(token);
 
-  // Log actor URN only — never the token itself
-  console.log(
-    `\n  LinkedIn authorized! Actor: ${token.personUrn ?? "(unknown)"}\n` +
-      "  Token saved locally. It will never be printed or committed."
-  );
+  const actorUrn = getPersonUrn();
+  if (actorUrn) {
+    console.log(
+      chalk.green.bold(`\n  LinkedIn authorized! Actor: ${actorUrn}\n`) +
+        chalk.dim("  Token saved locally. It will never be printed or committed.")
+    );
+  } else {
+    console.log(
+      chalk.yellow.bold(
+        "\n  WARNING: LinkedIn access token acquired, but member person URN could not be automatically detected.\n"
+      ) +
+        chalk.white(
+          "  LinkedIn's 'Share on LinkedIn' product (w_member_social) does not grant profile read access.\n" +
+          "  To publish comments, set your LinkedIn person URN in .env:\n" +
+          "    " + chalk.cyan("LINKEDIN_PERSON_URN=urn:li:person:<your_member_id>\n\n") +
+          "  (Alternatively, enable 'Sign In with LinkedIn using OpenID Connect' in your LinkedIn Developer App.)\n"
+        )
+    );
+  }
 }

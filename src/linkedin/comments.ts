@@ -87,7 +87,7 @@ export async function publishComment(
   if (!isAuthorized()) {
     return {
       status: "manual_fallback",
-      reason: "LinkedIn API authorization unavailable.",
+      reason: "LinkedIn API authorization unavailable (access token or person URN missing).",
     };
   }
 
@@ -97,7 +97,7 @@ export async function publishComment(
   if (!accessToken || !personUrn) {
     return {
       status: "manual_fallback",
-      reason: "LinkedIn access token or person URN missing. Re-authorize with --linkedin-auth.",
+      reason: "LinkedIn access token or person URN missing. Set LINKEDIN_PERSON_URN in .env or re-authorize with --linkedin-auth.",
     };
   }
 

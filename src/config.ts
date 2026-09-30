@@ -59,6 +59,8 @@ export const LINKEDIN = {
     "LINKEDIN_REDIRECT_URI",
     "http://localhost:8899/oauth/linkedin/callback"
   ),
+  // Member person URN (urn:li:person:<id>) used as author/actor when publishing comments
+  personUrn: optional("LINKEDIN_PERSON_URN"),
   // Port used by the local OAuth callback server
   callbackPort: parseInt(optional("LINKEDIN_CALLBACK_PORT", "8899"), 10),
   // Version header required by LinkedIn REST API (YYYYMM format)
@@ -71,6 +73,18 @@ export const LINKEDIN = {
 
 export const MAX_PEOPLE = parseInt(optional("MAX_PEOPLE", "30"), 10);
 export const MAX_POSTS = parseInt(optional("MAX_POSTS", "10"), 10);
+
+// Cooldown period before a skipped/rejected person can be considered again
+export const SKIPPED_PERSON_COOLDOWN_DAYS = parseInt(
+  optional("SKIPPED_PERSON_COOLDOWN_DAYS", "30"),
+  10
+);
+
+// ---------------------------------------------------------------------------
+// Founder Context
+// ---------------------------------------------------------------------------
+
+export { FOUNDER_CONTEXT } from "./ai/founder.js";
 
 // ---------------------------------------------------------------------------
 // ICP Definition

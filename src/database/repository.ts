@@ -6,10 +6,24 @@ import { DatabaseSync } from "node:sqlite";
 import crypto from "node:crypto";
 import { getDatabase } from "./connection.js";
 import { runMigrations } from "./migrations.js";
+import { normalizeLinkedInProfileUrl } from "../discovery/firecrawl.js";
 
 // ---------------------------------------------------------------------------
 // Model Types
 // ---------------------------------------------------------------------------
+
+export type IneligibilityReason =
+  | "already_approved"
+  | "already_contacted"
+  | "pending_review"
+  | "skipped_cooldown";
+
+export interface PersonEligibility {
+  eligible: boolean;
+  reason?: IneligibilityReason;
+  person?: PersonRow;
+  details?: string;
+}
 
 export interface PersonRow {
   id: string;
@@ -110,8 +124,12 @@ export interface EventRow {
 // ---------------------------------------------------------------------------
 
 export function normaliseCanonicalUrl(url: string): string {
+  if (!url || typeof url !== "string") return "";
+  const profileNorm = normalizeLinkedInProfileUrl(url);
+  if (profileNorm) return profileNorm;
+
   try {
-    const u = new URL(url);
+    const u = new URL(url.trim());
     return (u.origin + u.pathname).replace(/\/$/, "").toLowerCase();
   } catch {
     return url.trim().toLowerCase().replace(/\/$/, "");
@@ -254,7 +272,170 @@ export class GrowthRepository {
   public getAllKnownProfileUrls(): Set<string> {
     const stmt = this.db.prepare("SELECT canonical_profile_url FROM people");
     const rows = stmt.all() as unknown as Array<{ canonical_profile_url: string }>;
-    return new Set(rows.map((r) => r.canonical_profile_url));
+    return new Set(rows.map((r) => normaliseCanonicalUrl(r.canonical_profile_url)));
+  }
+
+  public getPersonEligibility(
+    profileUrl: string,
+    options: { skippedCooldownDays?: number } = {}
+  ): PersonEligibility {
+    const canonical = normaliseCanonicalUrl(profileUrl);
+    const person = this.getPersonByUrl(canonical);
+
+    if (!person) {
+      return { eligible: true };
+    }
+
+    // 1. A person who was already CONTACTED should never be recommended again by default
+    if (person.current_status === "contacted") {
+      return {
+        eligible: false,
+        reason: "already_contacted",
+        person,
+        details: "Candidate was previously marked as contacted.",
+      };
+    }
+
+    // 2. A person who was previously APPROVED for DM should not be recommended again
+    if (person.current_status === "approved") {
+      return {
+        eligible: false,
+        reason: "already_approved",
+        person,
+        details: "Candidate was previously approved for DM outreach.",
+      };
+    }
+
+    // Check all reviews for this person
+    const revStmt = this.db.prepare(`
+      SELECT status, reviewed_at FROM person_reviews
+      WHERE person_id = ?
+      ORDER BY version DESC
+    `);
+    const reviews = revStmt.all(person.id) as unknown as Array<{ status: string; reviewed_at: string | null }>;
+
+    if (reviews.some((r) => r.status === "approved")) {
+      return {
+        eligible: false,
+        reason: "already_approved",
+        person,
+        details: "Candidate has an approved review record in history.",
+      };
+    }
+
+    // 3. A person who is currently pending review should not be re-recommended
+    if (reviews.some((r) => r.status === "pending")) {
+      return {
+        eligible: false,
+        reason: "pending_review",
+        person,
+        details: "Candidate is already in the pending review queue.",
+      };
+    }
+
+    // 4. A person who was skipped/rejected has a configurable cooldown
+    const cooldownDays = options.skippedCooldownDays ?? 30;
+    const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+
+    const latestSkipped = reviews.find((r) => r.status === "skipped");
+    if (person.current_status === "skipped" || latestSkipped) {
+      const skippedTimestamp = latestSkipped?.reviewed_at
+        ? Date.parse(latestSkipped.reviewed_at)
+        : Date.parse(person.last_seen_at);
+
+      if (!isNaN(skippedTimestamp)) {
+        const elapsedMs = Date.now() - skippedTimestamp;
+        if (elapsedMs < cooldownMs) {
+          const remainingDays = Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+          return {
+            eligible: false,
+            reason: "skipped_cooldown",
+            person,
+            details: `Candidate was skipped ${Math.round(elapsedMs / (24 * 60 * 60 * 1000))}d ago. Cooldown active for ${remainingDays} more day(s).`,
+          };
+        }
+      }
+    }
+
+    return { eligible: true, person };
+  }
+
+  public getIneligibleProfileMap(
+    options: { skippedCooldownDays?: number } = {}
+  ): Map<string, IneligibilityReason> {
+    const cooldownDays = options.skippedCooldownDays ?? 30;
+    const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const stmt = this.db.prepare(`
+      SELECT 
+        p.canonical_profile_url,
+        p.current_status,
+        p.last_seen_at,
+        MAX(CASE WHEN r.status = 'skipped' THEN r.reviewed_at ELSE NULL END) as last_skipped_at,
+        SUM(CASE WHEN r.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END) as approved_count
+      FROM people p
+      LEFT JOIN person_reviews r ON p.id = r.person_id
+      GROUP BY p.id
+    `);
+
+    const rows = stmt.all() as unknown as Array<{
+      canonical_profile_url: string;
+      current_status: string;
+      last_seen_at: string;
+      last_skipped_at: string | null;
+      pending_count: number;
+      approved_count: number;
+    }>;
+
+    const map = new Map<string, IneligibilityReason>();
+
+    for (const r of rows) {
+      const canonical = normaliseCanonicalUrl(r.canonical_profile_url);
+
+      if (r.current_status === "contacted") {
+        map.set(canonical, "already_contacted");
+        continue;
+      }
+
+      if (r.current_status === "approved" || r.approved_count > 0) {
+        map.set(canonical, "already_approved");
+        continue;
+      }
+
+      if (r.pending_count > 0) {
+        map.set(canonical, "pending_review");
+        continue;
+      }
+
+      if (r.current_status === "skipped" || r.last_skipped_at) {
+        const ts = r.last_skipped_at ? Date.parse(r.last_skipped_at) : Date.parse(r.last_seen_at);
+        if (!isNaN(ts) && now - ts < cooldownMs) {
+          map.set(canonical, "skipped_cooldown");
+          continue;
+        }
+      }
+    }
+
+    return map;
+  }
+
+  public markPersonContacted(personId: string, sessionId?: string): void {
+    const now = new Date().toISOString();
+    this.transaction(() => {
+      const updatePerson = this.db.prepare(`
+        UPDATE people
+        SET current_status = 'contacted',
+            last_seen_at = ?
+        WHERE id = ?
+      `);
+      updatePerson.run(now, personId);
+
+      this.logEvent(sessionId || null, "person", personId, "contacted", {
+        contactedAt: now,
+      });
+    });
   }
 
   public getPersonByUrl(profileUrl: string): PersonRow | null {
@@ -584,10 +765,17 @@ export class GrowthRepository {
   public getPendingPersonReviews(): Array<{ review: PersonReviewRow; person: PersonRow }> {
     const stmt = this.db.prepare(`
       SELECT r.*, p.name as p_name, p.headline as p_headline, p.canonical_profile_url as p_url,
-             p.icp_score as p_icp_score, p.overall_score as p_overall_score, p.evidence_json as p_evidence
+             p.icp_score as p_icp_score, p.overall_score as p_overall_score, p.evidence_json as p_evidence,
+             p.current_status as p_current_status
       FROM person_reviews r
       JOIN people p ON r.person_id = p.id
       WHERE r.status = 'pending'
+        AND p.current_status NOT IN ('approved', 'contacted')
+        AND r.id = (
+          SELECT pr.id FROM person_reviews pr
+          WHERE pr.person_id = r.person_id AND pr.status = 'pending'
+          ORDER BY pr.version DESC LIMIT 1
+        )
       ORDER BY p.overall_score DESC, r.version ASC
     `);
 
@@ -603,7 +791,7 @@ export class GrowthRepository {
         discovered_at: "",
         first_seen_at: "",
         last_seen_at: "",
-        current_status: "discovered",
+        current_status: r.p_current_status || "discovered",
         activity_score: 0,
         icp_score: r.p_icp_score,
         intent_score: 0,
@@ -725,6 +913,16 @@ export class GrowthRepository {
       `);
       updateRev.run(decision, now, reviewerAction, finalMessage, reviewId);
 
+      // Clean up any other duplicate pending reviews for this person so they do not remain stale
+      const cleanRemaining = this.db.prepare(`
+        UPDATE person_reviews
+        SET status = ?,
+            reviewed_at = ?,
+            reviewer_action = ?
+        WHERE person_id = ? AND status = 'pending' AND id != ?
+      `);
+      cleanRemaining.run(decision, now, reviewerAction, review.person_id, reviewId);
+
       // Update person row current_status
       const updatePerson = this.db.prepare(`
         UPDATE people
@@ -795,18 +993,30 @@ export class GrowthRepository {
 
   // --- LinkedIn Publishing (for --publish-comments) ---
 
-  public getApprovedCommentsForPublishing(): Array<{ comment: CommentRow; post: PostRow }> {
-    const stmt = this.db.prepare(`
+  public getApprovedCommentsForPublishing(options: {
+    limit?: number;
+    commentId?: string;
+  } = {}): Array<{ comment: CommentRow; post: PostRow }> {
+    let sql = `
       SELECT c.*, p.canonical_post_url as p_url, p.author_name as p_author,
              p.author_profile_url as p_author_url, p.relevance_score as p_relevance_score,
              p.overall_score as p_overall_score, p.evidence_json as p_evidence
       FROM comments c
       JOIN posts p ON c.post_id = p.id
       WHERE c.status = 'approved' AND c.published_at IS NULL
-      ORDER BY c.created_at ASC
-    `);
-
-    const rows = stmt.all() as any[];
+    `;
+    const params: any[] = [];
+    if (options.commentId && options.commentId.trim()) {
+      sql += " AND c.id = ?";
+      params.push(options.commentId.trim());
+    }
+    sql += " ORDER BY c.created_at ASC";
+    if (typeof options.limit === "number" && options.limit > 0) {
+      sql += " LIMIT ?";
+      params.push(options.limit);
+    }
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(...params) as any[];
     return rows.map((r) => ({
       comment: {
         id: r.id,

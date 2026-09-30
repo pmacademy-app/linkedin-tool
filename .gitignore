@@ -7,3 +7,6 @@ data/linkedin-auth.json
 data/*credentials*
 data/*tokens*
 data/database/*.db*
+
+.tokencap/
+tokencap/

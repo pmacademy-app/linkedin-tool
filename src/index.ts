@@ -19,7 +19,7 @@
 import "dotenv/config";
 import chalk from "chalk";
 import { GrowthRepository } from "./database/repository.js";
-import { isAuthorized, runOAuthFlow } from "./linkedin/auth.js";
+import { isAuthorized, hasValidToken, runOAuthFlow } from "./linkedin/auth.js";
 import { runPeopleWorkflow } from "./workflow/peopleWorkflow.js";
 import { runPostsWorkflow } from "./workflow/postsWorkflow.js";
 import { runReviewPeopleWorkflow, closeRL as closePeopleRL } from "./workflow/reviewPeopleWorkflow.js";
@@ -39,6 +39,8 @@ function printHeader(): void {
   console.log(chalk.dim("  Persistent founder-led user acquisition engine  *  " + new Date().toDateString()));
   if (isAuthorized()) {
     console.log(chalk.green("  LinkedIn API: authorized (w_member_social)"));
+  } else if (hasValidToken()) {
+    console.log(chalk.yellow("  LinkedIn API: token valid, but person URN missing (Set LINKEDIN_PERSON_URN in .env)"));
   } else {
     console.log(chalk.dim("  LinkedIn API: not authorized (Run --linkedin-auth to enable automated comments)"));
   }
@@ -61,6 +63,7 @@ ${chalk.bold.white("COMMANDS:")}
   ${chalk.cyan("npm run growth --review-posts")}         Review pending comments (authorize for publishing)
 
   ${chalk.cyan("npm run growth --publish-comments")}     Publish approved comments via official LinkedIn API
+  ${chalk.cyan("npm run growth --publish-comments --limit 1")} Publish at most 1 approved comment (safe controlled test)
   ${chalk.cyan("npm run growth --publish-comments -resume")} Resume interrupted comment publication
 
   ${chalk.cyan("npm run growth --status")}               View counts, pending queue sizes, and system health
@@ -74,7 +77,8 @@ ${chalk.bold.white("ADDITIONAL UTILITIES:")}
 ${chalk.bold.white("GLOBAL OPTIONS:")}
   ${chalk.yellow("--dry-run")}                          Simulate execution without modifying DB or calling APIs
   ${chalk.yellow("-resume, --resume")}                  Continue from existing persistent state
-  ${chalk.yellow("--limit <n>")}                        Limit rows (for --history)
+  ${chalk.yellow("--limit <n>")}                        Limit items (for publishing or history)
+  ${chalk.yellow("--comment-id <id>")}                  Select specific comment ID for publishing
   ${chalk.yellow("--entity <type>")}                    Filter by entity (person, post, comment, session)
   ${chalk.yellow("--event <type>")}                     Filter by event (published, approved, etc.)
 `);
@@ -100,6 +104,12 @@ async function main(): Promise<void> {
   const limitIdx = args.findIndex((a) => a === "--limit" || a === "-limit");
   if (limitIdx !== -1 && args[limitIdx + 1]) {
     limit = parseInt(args[limitIdx + 1]!, 10);
+  }
+
+  let commentId: string | undefined;
+  const commentIdIdx = args.findIndex((a) => a === "--comment-id" || a === "--id" || a === "-id");
+  if (commentIdIdx !== -1 && args[commentIdIdx + 1]) {
+    commentId = args[commentIdIdx + 1];
   }
 
   let entityType: string | undefined;
@@ -177,7 +187,7 @@ async function main(): Promise<void> {
   // Publish comments workflow
   if (hasFlag("publish-comments")) {
     printHeader();
-    await runPublishWorkflow(repo, { resume, dryRun });
+    await runPublishWorkflow(repo, { resume, dryRun, limit, commentId });
     return;
   }
 
